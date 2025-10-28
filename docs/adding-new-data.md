@@ -32,7 +32,26 @@ cp python/write_sample.py python/write_temperature.py
 
 環境変数で measurement 名を切り替えたい場合は既存の `INFLUX_MEASUREMENT` 変数を利用できます。フィールド名も切り替えるなら、スクリプトに独自の環境変数（例: `INFLUX_FIELD`）を追加してください。
 
-### 2-2. Line Protocol（curl）で書き込む
+### 2-2. CSV ログを一括取り込む
+
+OPC 実験装置の CSV ログは `python/write_experiment_opc_csv.py` で取り込めます。
+
+```bash
+python python/write_experiment_opc_csv.py \
+  --bucket demo-bucket \
+  --org demo-org \
+  --measurement experiment_opc
+```
+
+主なオプション:
+
+- `--csv-dir`: CSV を置いたディレクトリ（デフォルト: `data/experiment_opc_log`）
+- `--timezone`: タイムスタンプに適用するタイムゾーン（デフォルト: `UTC`。`NAIVE` で無変換）
+- `--batch-size`: InfluxDB に書き込む 1 バッチあたりのポイント数
+
+環境変数 `INFLUX_URL`, `INFLUX_TOKEN`, `INFLUX_ORG`, `INFLUX_BUCKET` なども利用できます。書き込み前に CSV の `timestamp` 列がフォーマット `%Y-%m-%d %H:%M:%S` になっているか確認してください。
+
+### 2-3. Line Protocol（curl）で書き込む
 
 CLI からシンプルに送る場合は以下のようにします。
 
