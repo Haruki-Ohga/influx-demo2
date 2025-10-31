@@ -102,7 +102,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"demo-bucket\")\n  |> range(start: -1000h)\n  |> filter(fn: (r) => r._measurement == \"experiment_opc\")\n  |> filter(fn: (r) => r._field == \"SP16C.SP16C_MON_REF_4R_TRA_POS\")\n  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")",
+          "query": "from(bucket: \"demo-bucket\")\n  |> range(start: -1000h)\n  |> filter(fn: (r) => r._measurement == \"experiment_opc\")\n  |> filter(fn: (r) => r._field == \"SP16C.SP16C_MON_REF_4R_TRA_POS\")\n  |> aggregateWindow(every: 5s, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")",
           "refId": "A"
         }
       ],
@@ -193,7 +193,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"demo-bucket\")\n  |> range(start: -1000h)\n  |> filter(fn: (r) => r._measurement == \"experiment_opc\")\n  |> filter(fn: (r) => r._field == \"SP16C.SP16C_MON_REF_4R_A_STAR\")\n  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")\n",
+          "query": "from(bucket: \"demo-bucket\")\n  |> range(start: -1000h)\n  |> filter(fn: (r) => r._measurement == \"experiment_opc\")\n  |> filter(fn: (r) => r._field == \"SP16C.SP16C_MON_REF_4R_A_STAR\")\n  |> aggregateWindow(every: 5s, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")\n",
           "refId": "A"
         }
       ],
@@ -284,7 +284,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"demo-bucket\")\n  |> range(start: -1000h)\n  |> filter(fn: (r) => r._measurement == \"experiment_opc\")\n  |> filter(fn: (r) => r._field == \"SP16C.SP16C_MON_REF_4R_B_STAR\")\n  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")\n\n",
+          "query": "from(bucket: \"demo-bucket\")\n  |> range(start: -1000h)\n  |> filter(fn: (r) => r._measurement == \"experiment_opc\")\n  |> filter(fn: (r) => r._field == \"SP16C.SP16C_MON_REF_4R_B_STAR\")\n  |> aggregateWindow(every: 5s, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")\n\n",
           "refId": "A"
         }
       ],
@@ -302,13 +302,13 @@
     "list": []
   },
   "time": {
-    "from": "2025-10-02T12:11:42.780Z",
-    "to": "2025-10-02T13:17:29.884Z"
+    "from": "2025-10-23T15:33:18.185Z",
+    "to": "2025-10-23T15:46:31.611Z"
   },
   "timepicker": {},
   "timezone": "",
   "title": "InfluxDB SP16C Dashboard",
   "uid": "influx-demo-sample",
-  "version": 8,
+  "version": 2,
   "weekStart": ""
 }

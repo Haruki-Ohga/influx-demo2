@@ -12,10 +12,10 @@ from __future__ import annotations
 import argparse
 import csv
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Iterator, Sequence, Tuple
+from typing import Dict, Iterable, Iterator, Literal, Sequence, Set, Tuple
 
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
@@ -30,6 +30,7 @@ DEFAULT_CSV_DIR = Path(os.getenv("OPC_CSV_DIR", "data/experiment_opc_log"))
 DEFAULT_TIMESTAMP_FORMAT = os.getenv("OPC_TIMESTAMP_FORMAT", "%Y-%m-%d %H:%M:%S")
 DEFAULT_TIMEZONE = os.getenv("OPC_TIMEZONE", "UTC")
 DEFAULT_BATCH_SIZE = int(os.getenv("OPC_BATCH_SIZE", "500"))
+FieldType = Literal["float", "bool", "string"]
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,14 @@ class Settings:
     timestamp_format: str
     timezone_name: str
     batch_size: int
+
+
+@dataclass
+class IngestStats:
+    skipped_fields: Dict[str, int] = field(default_factory=dict)
+
+    def record_skip(self, field: str) -> None:
+        self.skipped_fields[field] = self.skipped_fields.get(field, 0) + 1
 
 
 def parse_args() -> Settings:
@@ -147,17 +156,105 @@ def parse_timestamp(
     return ts.astimezone(timezone.utc)
 
 
-def parse_field_value(raw: str) -> bool | float | str | None:
+def detect_field_types(files: Sequence[Path]) -> Dict[str, FieldType]:
+    candidates: Dict[str, Set[FieldType]] = {}
+    for csv_path in files:
+        with csv_path.open(newline="") as handle:
+            reader = csv.DictReader(handle)
+            if reader.fieldnames is None:
+                continue
+            for row in reader:
+                for field, raw_value in row.items():
+                    if field == "timestamp" or raw_value is None:
+                        continue
+                    text = raw_value.strip()
+                    if not text:
+                        continue
+                    lowered = text.lower()
+                    if lowered in {"true", "false"}:
+                        candidate: FieldType = "bool"
+                    else:
+                        try:
+                            float(text)
+                        except ValueError:
+                            candidate = "string"
+                        else:
+                            candidate = "float"
+                    candidates.setdefault(field, set()).add(candidate)
+
+    field_types: Dict[str, FieldType] = {}
+    for field, seen in candidates.items():
+        if "float" in seen:
+            field_types[field] = "float"
+        elif "string" in seen:
+            field_types[field] = "string"
+        else:
+            field_types[field] = "bool"
+    return field_types
+
+
+def fetch_existing_field_types(
+    client: InfluxDBClient, org: str, bucket: str, measurement: str
+) -> Dict[str, FieldType]:
+    flux = f"""
+from(bucket: "{bucket}")
+  |> range(start: time(v: 0))
+  |> filter(fn: (r) => r._measurement == "{measurement}")
+  |> group(columns: ["_field"])
+  |> first()
+"""
+    try:
+        tables = client.query_api().query(org=org, query=flux)
+    except Exception:
+        return {}
+
+    field_types: Dict[str, FieldType] = {}
+    for table in tables:
+        for record in table.records:
+            value = record.get_value()
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                field_types[record["_field"]] = "bool"
+            elif isinstance(value, (int, float)):
+                field_types[record["_field"]] = "float"
+            elif isinstance(value, str):
+                field_types[record["_field"]] = "string"
+    return field_types
+
+
+def coerce_field_value(
+    field: str,
+    raw: str,
+    field_types: Dict[str, FieldType],
+    stats: IngestStats | None,
+) -> bool | float | str | None:
     text = raw.strip()
     if not text:
         return None
-    lowered = text.lower()
-    if lowered in {"true", "false"}:
-        return lowered == "true"
-    try:
-        return float(text)
-    except ValueError:
-        return text
+    field_type = field_types.get(field, "string")
+    if field_type == "float":
+        try:
+            return float(text)
+        except ValueError as exc:
+            lowered = text.lower()
+            if lowered == "true":
+                return 1.0
+            if lowered == "false":
+                return 0.0
+            if stats is not None:
+                stats.record_skip(field)
+            return None
+    if field_type == "bool":
+        lowered = text.lower()
+        if lowered in {"true", "1"}:
+            return True
+        if lowered in {"false", "0"}:
+            return False
+        if stats is not None:
+            stats.record_skip(field)
+        return None
+    return text
 
 
 def iter_points(
@@ -165,6 +262,8 @@ def iter_points(
     measurement: str,
     timestamp_format: str,
     tzinfo: timezone | ZoneInfo | None,
+    field_types: Dict[str, FieldType],
+    stats: IngestStats,
 ) -> Iterator[Point]:
     for csv_path in files:
         with csv_path.open(newline="") as handle:
@@ -192,7 +291,7 @@ def iter_points(
                         continue
                     if raw_value is None:
                         continue
-                    value = parse_field_value(raw_value)
+                    value = coerce_field_value(field, raw_value, field_types, stats)
                     if value is None:
                         continue
                     point.field(field, value)
@@ -240,13 +339,26 @@ def main() -> None:
     timezone_info = resolve_timezone(settings.timezone_name)
     csv_files = locate_csv_files(settings.csv_dir)
 
-    points = iter_points(
-        csv_files, settings.measurement, settings.timestamp_format, timezone_info
-    )
+    stats = IngestStats()
 
     with InfluxDBClient(
         url=settings.url, token=settings.token, org=settings.org, timeout=10_000
     ) as client:
+        existing_types = fetch_existing_field_types(
+            client, settings.org, settings.bucket, settings.measurement
+        )
+        field_types = detect_field_types(csv_files)
+        field_types.update(existing_types)
+
+        points = iter_points(
+            csv_files,
+            settings.measurement,
+            settings.timestamp_format,
+            timezone_info,
+            field_types,
+            stats,
+        )
+
         total_points, batches = write_points(
             client,
             bucket=settings.bucket,
@@ -261,8 +373,12 @@ def main() -> None:
         f"from {file_count} CSV file{'s' if file_count != 1 else ''} "
         f"to bucket={settings.bucket} org={settings.org} at {settings.url}"
     )
+    if stats.skipped_fields:
+        skipped_details = ", ".join(
+            f"{field} ({count})" for field, count in sorted(stats.skipped_fields.items())
+        )
+        print(f"Skipped non-numeric values for fields: {skipped_details}")
 
 
 if __name__ == "__main__":
     main()
-
