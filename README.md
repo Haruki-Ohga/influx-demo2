@@ -106,6 +106,23 @@ python python/read_sample.py
 
 環境変数を省略した場合はデフォルト値 (`cpu` / `usage_user` / `-1h` / 10件) が使われます。
 
+### OPC 実験ログの一括投入
+
+`python/write_experiment_opc_csv.py` は `data/experiment_opc_log/` にある OPC 実験ログ (CSV) をまとめて InfluxDB に書き込むスクリプトです。実行前に仮想環境を作成し、依存パッケージをインストールしてください。
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+python python/write_experiment_opc_csv.py \
+  --bucket demo-bucket \
+  --org demo-org \
+  --measurement experiment_opc
+```
+
+環境変数 (`INFLUX_URL` など) でも同様に上書きできます。タイムゾーンやタイムスタンプ書式を調整したい場合は `--timezone`、`--timestamp-format` を利用してください。詳細なオプションと Grafana 側での確認手順は `docs/experiment-opc-guide.md` を参照してください。
+
 ## よく使うコマンド
 
 ```bash
